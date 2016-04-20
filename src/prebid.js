@@ -1,6 +1,6 @@
 /** @module pbjs */
 
-// if pbjs already exists in global dodcument scope, use it, if not, create the object
+// if pbjs already exists in global document scope, use it, if not, create the object
 window.pbjs = (window.pbjs || {});
 window.pbjs.que = window.pbjs.que || [];
 var pbjs = window.pbjs;
@@ -28,6 +28,7 @@ var pb_bidderMap = {};
 var pb_targetingMap = {};
 var pb_keyHistoryMap = {};
 var pb_bidsTimedOut = false;
+var pb_sendAllBids = false;
 
 var eventValidators = {
   bidWon: checkDefinedPlacement
@@ -212,13 +213,18 @@ function getWinningBid(bidArray) {
 
 function setGPTAsyncTargeting(code, slot) {
   //get the targeting that is already configured
-  var keyStrings = getTargetingfromGPTIdentifier(slot);
+  const keyStrings = getTargetingfromGPTIdentifier(slot);
+  const bids = pbjs.getBidResponses(slot.getAdUnitPath());
 
   //copy keyStrings into pb_keyHistoryMap by code
   if (!pb_keyHistoryMap[code]) {
     pb_keyHistoryMap[code] = keyStrings;
   } else {
     utils.extend(pb_keyHistoryMap[code], keyStrings);
+  }
+
+  if (pb_sendAllBids && bids && bids.bids && bids.bids.length) {
+    utils.extend(pb_keyHistoryMap[code], getTargetingKeysAsBidder(bids.bids));
   }
 
   utils._each(pb_keyHistoryMap[code], function (value, key) {
@@ -519,9 +525,30 @@ function getTargetingfromGPTIdentifier(slot) {
 }
 
 /**
+ * returns targeting keys with key name appended with the bidder code
+ * @param bidArray an array of current bid objects
+ */
+function getTargetingKeysAsBidder(bidArray) {
+  let pairs = {};
 
+  // this assumes no key name collisions, which should not be possible
+  utils._each(bidArray, bid => {
+    const targeting = pb_targetingMap[bid.adUnitCode];
 
- /**
+    for (const key in targeting) {
+      if (targeting.hasOwnProperty(key)) {
+        const keyName = `${key}_${bid.bidderCode}`;
+        if (bid.adserverTargeting) {
+          pairs[keyName] = bid.adserverTargeting[key];
+        }
+      }
+    }
+  });
+
+  return pairs;
+}
+
+/**
  * Set query string targeting on all GPT ad units.
  * @alias module:pbjs.setTargetingForGPTAsync
  */
@@ -965,6 +992,10 @@ pbjs.setPriceGranularity = function (granularity) {
   } else {
     bidmanager.setPriceGranularity(granularity);
   }
+};
+
+pbjs.enableSendAllBids = function () {
+  pb_sendAllBids = true;
 };
 
 processQue();
